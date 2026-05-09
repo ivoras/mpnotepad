@@ -129,4 +129,4 @@ In Cursor, the same check can be driven through the built-in `cursor-ide-browser
 
 ## License
 
-Add your license here.
+MIT — see [LICENSE](LICENSE).
