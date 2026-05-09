@@ -1,0 +1,25 @@
+{
+  "name": "mpnotepad-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:js": "esbuild web/js-src/editor.mjs --bundle --format=esm --outfile=web/static/js/editor.js --platform=browser --target=es2022 --legal-comments=none"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "6.3.0",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.0",
+    "codemirror": "6.0.1",
+    "marked": "12.0.2",
+    "y-codemirror.next": "0.3.5",
+    "y-websocket": "2.0.4",
+    "yjs": "13.6.27"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  },
+  "overrides": {
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.0"
+  }
+}
