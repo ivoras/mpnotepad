@@ -71,7 +71,10 @@
   <div class="offcanvas offcanvas-end" tabindex="-1" id="historyPanel" aria-labelledby="historyPanelLabel" style="width: 420px;">
     <div class="offcanvas-header border-bottom">
       <h5 class="offcanvas-title" id="historyPanelLabel">Document history</h5>
-      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="historyRefresh" title="Refresh" aria-label="Refresh">🔄</button>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+      </div>
     </div>
     <div class="offcanvas-body p-0 d-flex flex-column">
       <div class="px-3 py-2 border-bottom small text-muted">
@@ -80,9 +83,9 @@
       <div id="historyList" class="list-group list-group-flush overflow-auto" style="max-height: 35vh;">
         <div class="text-muted small p-3" id="historyEmpty">Loading...</div>
       </div>
-      <div class="border-top p-2 small text-muted d-flex justify-content-between align-items-center">
-        <span id="historyViewing">Select a snapshot to view</span>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="historyRefresh" title="Refresh" aria-label="Refresh">🔄</button>
+      <div class="border-top p-2 small text-muted d-flex justify-content-between align-items-center gap-2">
+        <span id="historyViewing" class="text-truncate">Select a snapshot to view</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary d-none flex-shrink-0" id="historyCopy" title="Copy snapshot to clipboard" aria-label="Copy snapshot to clipboard">📋</button>
       </div>
       <pre id="historyView" class="flex-grow-1 m-0 p-3 bg-light border-top overflow-auto" style="white-space: pre-wrap; font-size: 0.85rem;"></pre>
     </div>

@@ -31,7 +31,7 @@ func (s *Server) handleNewDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := ulidgen.New()
-	if err := s.store.CreateDocument(r.Context(), id, "", nil, false); err != nil {
+	if err := s.store.CreateDocument(r.Context(), id, "", nil, true); err != nil {
 		s.log.Error("create doc", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

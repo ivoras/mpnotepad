@@ -42588,6 +42588,8 @@ var historyEmpty = document.getElementById("historyEmpty");
 var historyView = document.getElementById("historyView");
 var historyViewing = document.getElementById("historyViewing");
 var historyRefresh = document.getElementById("historyRefresh");
+var historyCopy = document.getElementById("historyCopy");
+var historySelectedText = null;
 function fmtTime(unix) {
   try {
     return new Date(unix * 1e3).toLocaleString();
@@ -42595,7 +42597,14 @@ function fmtTime(unix) {
     return String(unix);
   }
 }
+function clearHistorySelection() {
+  historySelectedText = null;
+  historyCopy.classList.add("d-none");
+  historyView.textContent = "";
+  historyViewing.textContent = "Select a snapshot to view";
+}
 async function loadHistoryList() {
+  clearHistorySelection();
   historyList.innerHTML = "";
   historyEmpty.textContent = "Loading...";
   historyList.appendChild(historyEmpty);
@@ -42640,11 +42649,18 @@ async function loadHistoryList() {
 async function loadHistoryVersion(id3, createdAt) {
   historyView.textContent = "Loading...";
   historyViewing.textContent = `Snapshot from ${fmtTime(createdAt)}`;
+  historySelectedText = null;
+  historyCopy.classList.add("d-none");
   try {
     const res = await fetch(`/d/${docId}/versions/${id3}.json`);
     if (!res.ok) throw new Error("failed");
     const data2 = await res.json();
-    historyView.textContent = data2.text || "";
+    const text2 = data2.text || "";
+    historyView.textContent = text2;
+    historySelectedText = text2;
+    historyCopy.classList.remove("d-none");
+    historyCopy.textContent = "\u{1F4CB}";
+    historyCopy.title = "Copy snapshot to clipboard";
     Array.from(historyList.children).forEach((el) => el.classList.remove("active"));
     const items = historyList.querySelectorAll("button");
     items.forEach((el) => {
@@ -42656,8 +42672,36 @@ async function loadHistoryVersion(id3, createdAt) {
     historyView.textContent = "Could not load snapshot.";
   }
 }
+async function copySelectedSnapshot() {
+  if (historySelectedText == null) return;
+  let ok = false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(historySelectedText);
+      ok = true;
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = historySelectedText;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    }
+  } catch {
+    ok = false;
+  }
+  historyCopy.textContent = ok ? "\u2705" : "\u26A0\uFE0F";
+  historyCopy.title = ok ? "Copied!" : "Copy failed";
+  setTimeout(() => {
+    historyCopy.textContent = "\u{1F4CB}";
+    historyCopy.title = "Copy snapshot to clipboard";
+  }, 1200);
+}
 historyPanel?.addEventListener("show.bs.offcanvas", loadHistoryList);
 historyRefresh?.addEventListener("click", loadHistoryList);
+historyCopy?.addEventListener("click", copySelectedSnapshot);
 saveSettings?.addEventListener("click", async () => {
   settingsError.classList.add("d-none");
   const body = {
