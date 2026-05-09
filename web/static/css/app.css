@@ -1,0 +1,26 @@
+.doc-title-input {
+  max-width: 28rem;
+}
+
+.cm-host {
+  min-height: calc(100vh - 56px);
+}
+
+.cm-editor {
+  min-height: calc(100vh - 56px);
+}
+
+.markdown-preview {
+  min-height: calc(100vh - 56px);
+  overflow: auto;
+}
+
+.markdown-preview pre {
+  background: #f6f8fa;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+}
+
+.markdown-preview img {
+  max-width: 100%;
+}
