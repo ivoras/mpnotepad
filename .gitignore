@@ -1,0 +1,38 @@
+# Local data / secrets
+/db/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.local
+
+# Build artifacts
+/mpnotepad
+/dist/
+*.exe
+*.test
+*.out
+coverage.out
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Logs / tmp
+*.log
+*.tmp
+*.bak
+*~
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

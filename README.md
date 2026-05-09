@@ -111,6 +111,22 @@ go build ./...
 go vet ./...
 ```
 
+### Frontend bundle
+
+The browser ESM bundle (`web/static/js/editor.js`) is produced from `web/js-src/editor.mjs` via esbuild. Whenever you change anything under `web/js-src/`, rebuild it (and then rebuild the Go binary so the new asset is re-embedded):
+
+```bash
+npm install
+npm run build:js
+go build -o mpnotepad ./cmd/mpnotepad
+```
+
+### Manual end-to-end test
+
+There is no scripted browser harness. To verify multi-user editing, run two browser tabs against the same document URL and type into each — characters typed in one tab must appear in the other in real time, and the text must survive a full reload (proving Yjs state persistence).
+
+In Cursor, the same check can be driven through the built-in `cursor-ide-browser` MCP tools (`browser_navigate`, `browser_click`, `browser_type`, `browser_snapshot`) — open `http://127.0.0.1:8080/`, click **New document**, open the resulting `/d/<ULID>` URL in a second tab, and type into both editors.
+
 ## License
 
 Add your license here.
