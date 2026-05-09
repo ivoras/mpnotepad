@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 )
@@ -69,6 +71,17 @@ func encodeSyncStep2(state []byte) []byte {
 	return buf
 }
 
+// encodeSyncUpdate builds [msgSync][syncUpdate][update] message.
+// Used to re-broadcast peer-supplied updates (or to project a peer's step2
+// payload to other clients, since step2 is point-to-point).
+func encodeSyncUpdate(update []byte) []byte {
+	var buf []byte
+	buf = appendVarUint(buf, msgSync)
+	buf = appendVarUint(buf, syncUpdate)
+	buf = appendVarBytes(buf, update)
+	return buf
+}
+
 // parseYjsWire inspects a y-websocket binary frame. If it is a nested sync message,
 // returns syncStep and the inner document payload (for step2/update); payload is nil for step1.
 func parseYjsWire(msg []byte) (top uint64, syncStep int, inner []byte, err error) {
@@ -106,13 +119,53 @@ func parseYjsWire(msg []byte) (top uint64, syncStep int, inner []byte, err error
 	}
 }
 
-// mergeYjsState appends an update payload to existing state (Yjs accepts concatenated updates).
-func mergeYjsState(existing, update []byte) []byte {
-	if len(existing) == 0 {
-		return append([]byte(nil), update...)
+// Persistence framing for the list of Yjs updates that make up a document's
+// state. Yjs's Y.applyUpdate decodes exactly one update from a buffer; naive
+// byte concatenation is therefore NOT a valid merge — the second and later
+// updates would be silently dropped. We store each update separately,
+// length-prefixed, behind a magic header so existing legacy blobs (which
+// were a single update or a corrupt concat) can still be parsed.
+const stateMagicV1 = "MPNV1\n"
+
+// parseStoredState parses a persisted yjs_state blob into an ordered list of
+// individual Yjs updates. Empty input → empty slice. Legacy blobs without
+// the magic header are returned as a single update so the first edit's text
+// is at least preserved (older revisions of this server concatenated raw
+// update bytes; only the first one survives Y.applyUpdate decoding).
+func parseStoredState(b []byte) [][]byte {
+	if len(b) == 0 {
+		return nil
 	}
-	out := make([]byte, 0, len(existing)+len(update))
-	out = append(out, existing...)
-	out = append(out, update...)
+	if !bytes.HasPrefix(b, []byte(stateMagicV1)) {
+		return [][]byte{append([]byte(nil), b...)}
+	}
+	body := b[len(stateMagicV1):]
+	var updates [][]byte
+	for off := 0; off+4 <= len(body); {
+		n := int(binary.BigEndian.Uint32(body[off : off+4]))
+		off += 4
+		if n < 0 || off+n > len(body) {
+			break
+		}
+		updates = append(updates, append([]byte(nil), body[off:off+n]...))
+		off += n
+	}
+	return updates
+}
+
+// encodeStoredState serializes the updates list back into the on-disk blob.
+func encodeStoredState(updates [][]byte) []byte {
+	total := len(stateMagicV1)
+	for _, u := range updates {
+		total += 4 + len(u)
+	}
+	out := make([]byte, 0, total)
+	out = append(out, stateMagicV1...)
+	var sz [4]byte
+	for _, u := range updates {
+		binary.BigEndian.PutUint32(sz[:], uint32(len(u)))
+		out = append(out, sz[:]...)
+		out = append(out, u...)
+	}
 	return out
 }

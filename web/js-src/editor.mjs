@@ -27,12 +27,27 @@ const setClearPassword = document.getElementById("setClearPassword");
 const saveSettings = document.getElementById("saveSettings");
 const settingsError = document.getElementById("settingsError");
 
-function setConn(ok, label) {
+function setConn(state, label, title) {
   connStatus.textContent = label;
-  connStatus.classList.toggle("bg-success", ok);
-  connStatus.classList.toggle("bg-secondary", !ok);
-  connStatus.classList.toggle("bg-danger", !ok && label === "error");
+  connStatus.title = title || label;
+  connStatus.classList.remove("bg-success", "bg-secondary", "bg-danger", "bg-warning", "text-dark");
+  switch (state) {
+    case "synced":
+      connStatus.classList.add("bg-success");
+      break;
+    case "connecting":
+    case "syncing":
+      connStatus.classList.add("bg-warning", "text-dark");
+      break;
+    case "error":
+      connStatus.classList.add("bg-danger");
+      break;
+    default:
+      connStatus.classList.add("bg-secondary");
+  }
 }
+
+let syncCompleted = false;
 
 const ydoc = new Y.Doc();
 const ytext = ydoc.getText("content");
@@ -43,14 +58,27 @@ const provider = new WebsocketProvider(wsBase, "ws", ydoc, { WebSocketPolyfill: 
 
 provider.on("status", (event) => {
   if (event.status === "connected") {
-    setConn(true, "live");
+    if (syncCompleted) {
+      setConn("synced", "live", "WebSocket connected and document synced");
+    } else {
+      setConn("connecting", "syncing…", "WebSocket connected; waiting for document state");
+    }
+  } else if (event.status === "connecting") {
+    setConn("connecting", "connecting…", "Opening WebSocket");
   } else if (event.status === "disconnected") {
-    setConn(false, "offline");
+    setConn("offline", "offline", "WebSocket disconnected");
   }
 });
 
-provider.on("connection-error", () => {
-  setConn(false, "error");
+provider.on("connection-error", (err) => {
+  setConn("error", "error", `WebSocket error: ${err?.message || err || "unknown"}`);
+});
+
+provider.on("sync", (isSynced) => {
+  if (isSynced) {
+    syncCompleted = true;
+    setConn("synced", "live", "WebSocket connected and document synced");
+  }
 });
 
 if (markdownPanel) {
@@ -99,6 +127,40 @@ provider.on("status", (event) => {
   }
 });
 
+const cursorStorageKey = `mpn:cursor:${docId}`;
+
+function loadSavedCursor() {
+  try {
+    const raw = localStorage.getItem(cursorStorageKey);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    if (typeof obj?.head === "number") return obj;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function saveCursor(view) {
+  const sel = view.state.selection.main;
+  try {
+    localStorage.setItem(cursorStorageKey, JSON.stringify({
+      head: sel.head,
+      anchor: sel.anchor,
+    }));
+  } catch {
+    /* quota or disabled storage; ignore */
+  }
+}
+
+let saveCursorTimer = null;
+const cursorPersistPlugin = EditorView.updateListener.of((update) => {
+  if (update.selectionSet || update.docChanged) {
+    clearTimeout(saveCursorTimer);
+    saveCursorTimer = setTimeout(() => saveCursor(update.view), 250);
+  }
+});
+
 const state = EditorState.create({
   doc: "",
   extensions: [
@@ -106,10 +168,39 @@ const state = EditorState.create({
     markdown(),
     yCollab(ytext, provider.awareness),
     EditorView.lineWrapping,
+    cursorPersistPlugin,
   ],
 });
 
-new EditorView({ state, parent: editorMount });
+const view = new EditorView({ state, parent: editorMount });
+
+// Restore saved cursor position once the Yjs document has finished its initial sync,
+// so the document length reflects the real content and the offset is meaningful.
+let cursorRestored = false;
+function restoreCursor() {
+  if (cursorRestored) return;
+  cursorRestored = true;
+  const saved = loadSavedCursor();
+  const docLen = view.state.doc.length;
+  let head = 0;
+  let anchor = 0;
+  if (saved) {
+    head = Math.max(0, Math.min(saved.head, docLen));
+    anchor = Math.max(0, Math.min(saved.anchor ?? saved.head, docLen));
+  } else {
+    head = anchor = docLen;
+  }
+  view.dispatch({ selection: EditorSelection.single(anchor, head) });
+  view.focus();
+}
+
+provider.once?.("synced", restoreCursor);
+provider.on("sync", (isSynced) => { if (isSynced) restoreCursor(); });
+// Fallback: focus immediately so the user can start typing even before sync completes;
+// restoreCursor will reposition once sync arrives. If sync never fires (offline), still
+// focus and use whatever local content exists.
+view.focus();
+setTimeout(restoreCursor, 1500);
 
 titleInput?.addEventListener("input", () => {
   document.title = titleInput.value.trim() || "Untitled";

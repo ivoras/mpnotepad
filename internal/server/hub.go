@@ -11,12 +11,16 @@ import (
 	"mpnotepad/internal/store"
 )
 
-// Hub relays Yjs binary frames between clients and persists opaque state.
+// Hub relays Yjs binary frames between clients and persists state as an ordered
+// list of individual Yjs updates (each one decodable by a single Y.applyUpdate
+// call on the client). Concatenating updates into one buffer would be wrong:
+// Y.applyUpdate decodes exactly one update at a time and stops, so naive
+// concatenation silently drops everything after the first edit.
 type Hub struct {
 	docID   string
 	store   *store.Store
 	log     *slog.Logger
-	state   []byte
+	updates [][]byte
 	clients map[*wsClient]struct{}
 
 	register   chan *wsClient
@@ -54,6 +58,12 @@ type clientFrame struct {
 	data []byte
 }
 
+// safeSnapshotShrinkRatio guards against accidentally overwriting history with
+// a much smaller snapshot from a client that didn't receive the initial Yjs
+// sync. A client may submit shorter text only if it's at least this fraction
+// of the previously-saved version, OR if the previous version was empty.
+const safeSnapshotShrinkRatio = 0.5
+
 type textSnapshotMsg struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
@@ -66,12 +76,11 @@ type wsClient struct {
 }
 
 func newHub(log *slog.Logger, st *store.Store, docID string, initial []byte, onEmpty func()) *Hub {
-	stCopy := append([]byte(nil), initial...)
 	return &Hub{
 		docID:        docID,
 		store:        st,
 		log:          log,
-		state:        stCopy,
+		updates:      parseStoredState(initial),
 		clients:      make(map[*wsClient]struct{}),
 		register:     make(chan *wsClient, 8),
 		unregister:   make(chan *wsClient, 8),
@@ -154,28 +163,30 @@ func (h *Hub) handleFrame(frame clientFrame) {
 	case msgSync:
 		switch syncStep {
 		case syncStep1:
-			reply := encodeSyncStep2(h.state)
-			select {
-			case frame.c.send <- reply:
-			default:
-				h.log.Warn("client send buffer full", "doc", h.docID)
-			}
+			// Point-to-point: only the requester needs the response. Send the
+			// first stored update as Sync.Step2 (the protocol-mandated reply
+			// to Step1) and the rest as separate Sync.Update messages, since
+			// a single Step2 buffer can only carry one decodable update.
+			h.sendInitialSync(frame.c)
 			return
 		case syncStep2:
+			// A client's step2 carries updates the server should integrate.
+			// Append (don't replace) so updates from other clients aren't lost.
+			// Re-broadcast as an Update so peers integrate via the additive
+			// path (step2 is point-to-point in the y-protocols spec).
 			if len(inner) > 0 {
-				h.state = append([]byte(nil), inner...)
-				h.dirty = true
+				h.appendUpdate(inner)
+				h.broadcastExcept(frame.c, encodeSyncUpdate(inner))
 			}
-			h.broadcastExcept(frame.c, msg)
 			return
 		case syncUpdate:
 			if len(inner) > 0 {
-				h.state = mergeYjsState(h.state, inner)
-				h.dirty = true
+				h.appendUpdate(inner)
+				h.broadcastExcept(frame.c, msg)
 			}
-			h.broadcastExcept(frame.c, msg)
 			return
 		default:
+			// Unknown sync sub-step: forward as-is (best effort).
 			h.broadcastExcept(frame.c, msg)
 			return
 		}
@@ -204,12 +215,51 @@ func (h *Hub) flush(ctx context.Context) error {
 	if !h.dirty {
 		return nil
 	}
-	st := append([]byte(nil), h.state...)
-	if err := h.store.UpdateYjsState(ctx, h.docID, st); err != nil {
+	blob := encodeStoredState(h.updates)
+	if err := h.store.UpdateYjsState(ctx, h.docID, blob); err != nil {
 		return err
 	}
 	h.dirty = false
 	return nil
+}
+
+// appendUpdate stores a copy of one Yjs update and marks the hub dirty.
+func (h *Hub) appendUpdate(update []byte) {
+	h.updates = append(h.updates, append([]byte(nil), update...))
+	h.dirty = true
+}
+
+// sendInitialSync delivers the full document state to a single client as the
+// reply to its Sync.Step1: first stored update as Sync.Step2, remainder as
+// individual Sync.Update messages. This is the only correct way to deliver
+// multiple Yjs updates over the wire — Y.applyUpdate decodes one update per
+// message, never multiple from one buffer.
+func (h *Hub) sendInitialSync(c *wsClient) {
+	if len(h.updates) == 0 {
+		h.deliver(c, encodeSyncStep2(nil))
+		return
+	}
+	if !h.deliver(c, encodeSyncStep2(h.updates[0])) {
+		return
+	}
+	for _, u := range h.updates[1:] {
+		if !h.deliver(c, encodeSyncUpdate(u)) {
+			return
+		}
+	}
+}
+
+// deliver enqueues one already-encoded message to a single client. Returns
+// false if the client's send buffer is full (we drop and warn rather than
+// block the hub goroutine).
+func (h *Hub) deliver(c *wsClient, msg []byte) bool {
+	select {
+	case c.send <- msg:
+		return true
+	default:
+		h.log.Warn("client send buffer full", "doc", h.docID)
+		return false
+	}
 }
 
 // Flush persists state if dirty (for process shutdown).
@@ -235,6 +285,17 @@ func (h *Hub) snapshotVersion(ctx context.Context) error {
 	}
 	if h.lastSavedLoaded && h.latestText == h.lastSavedText {
 		return nil
+	}
+	// Refuse to persist a snapshot that is suspiciously smaller than the last
+	// known good text — almost certainly a client whose Yjs sync silently failed.
+	if h.lastSavedLoaded && len(h.lastSavedText) > 0 {
+		if float64(len(h.latestText)) < safeSnapshotShrinkRatio*float64(len(h.lastSavedText)) {
+			h.log.Warn("rejecting suspicious snapshot",
+				"doc", h.docID,
+				"prev_len", len(h.lastSavedText),
+				"new_len", len(h.latestText))
+			return nil
+		}
 	}
 	if _, err := h.store.CreateDocumentVersion(ctx, h.docID, h.latestText); err != nil {
 		h.log.Warn("create document version", "doc", h.docID, "err", err)
