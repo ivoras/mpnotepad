@@ -17,6 +17,7 @@ Go HTTP/WebSocket server + static HTML/JS client: shared text documents at `/d/<
 2. **Password** — If `password_hash` set and cookie invalid → `password.html`; `POST /d/<id>/auth` sets session.
 3. **Sync** — `GET /d/<id>/ws` (authorized). Hub parses Yjs wire just enough: answer `SyncStep1` with `SyncStep2` from stored state; forward awareness; merge `Update` / replace on client `SyncStep2`; persist debounced to `yjs_state`.
 4. **Settings** — `GET/POST /d/<id>/settings(.json)` JSON: title, markdown side panel, optional bcrypt password / clear password (invalidates other sessions).
+5. **Versions / history** — Client pushes the flattened text over the same WS as a JSON text frame (`{"type":"text-snapshot","text":...}`); the hub keeps the latest snapshot in memory and writes a row to `document_versions` (`id, document_id, created_at, text, char_count, byte_size`) on each client unregister and on shutdown, deduped against the last saved text. Read-only listing/viewing via `GET /d/<id>/versions.json` and `GET /d/<id>/versions/<vid>.json`, surfaced in a right-side offcanvas history panel in `document.html`.
 
 ## Conventions
 

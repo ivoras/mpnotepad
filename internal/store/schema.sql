@@ -16,3 +16,14 @@ CREATE TABLE IF NOT EXISTS document_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sessions_doc ON document_sessions(document_id);
+
+CREATE TABLE IF NOT EXISTS document_versions (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  document_id   TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  created_at    INTEGER NOT NULL,
+  text          TEXT NOT NULL,
+  char_count    INTEGER NOT NULL,
+  byte_size     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_versions_doc_created ON document_versions(document_id, created_at DESC);

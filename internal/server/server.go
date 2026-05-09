@@ -82,6 +82,8 @@ func (s *Server) routes() chi.Router {
 	r.Get("/d/{id}/settings.json", s.handleSettingsGet)
 	r.Post("/d/{id}/settings", s.handleSettingsPost)
 	r.Get("/d/{id}/ws", s.handleWS)
+	r.Get("/d/{id}/versions.json", s.handleVersionsList)
+	r.Get("/d/{id}/versions/{vid}.json", s.handleVersionGet)
 
 	fileSrv := http.FileServer(http.FS(s.staticFS))
 	r.Handle("/static/*", http.StripPrefix("/static/", fileSrv))

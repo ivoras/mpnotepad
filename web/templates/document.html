@@ -17,7 +17,8 @@
       <input type="text" class="form-control form-control-sm doc-title-input text-white bg-dark border-secondary" id="docTitle" value="{{.DocTitle}}" placeholder="Untitled" aria-label="Document title">
       <div class="ms-auto d-flex align-items-center gap-2">
         <span id="connStatus" class="badge bg-secondary" title="Connection">offline</span>
-        <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#settingsModal">Settings</button>
+        <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="offcanvas" data-bs-target="#historyPanel" aria-controls="historyPanel" title="History" aria-label="History">🕘</button>
+        <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#settingsModal" title="Settings" aria-label="Settings">⚙️</button>
       </div>
     </div>
   </nav>
@@ -64,6 +65,26 @@
           <button type="button" class="btn btn-primary" id="saveSettings">Save</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="offcanvas offcanvas-end" tabindex="-1" id="historyPanel" aria-labelledby="historyPanelLabel" style="width: 420px;">
+    <div class="offcanvas-header border-bottom">
+      <h5 class="offcanvas-title" id="historyPanelLabel">Document history</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body p-0 d-flex flex-column">
+      <div class="px-3 py-2 border-bottom small text-muted">
+        A snapshot is saved each time a collaborator disconnects.
+      </div>
+      <div id="historyList" class="list-group list-group-flush overflow-auto" style="max-height: 35vh;">
+        <div class="text-muted small p-3" id="historyEmpty">Loading...</div>
+      </div>
+      <div class="border-top p-2 small text-muted d-flex justify-content-between align-items-center">
+        <span id="historyViewing">Select a snapshot to view</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="historyRefresh" title="Refresh" aria-label="Refresh">🔄</button>
+      </div>
+      <pre id="historyView" class="flex-grow-1 m-0 p-3 bg-light border-top overflow-auto" style="white-space: pre-wrap; font-size: 0.85rem;"></pre>
     </div>
   </div>
 

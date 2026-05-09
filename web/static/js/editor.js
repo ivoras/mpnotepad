@@ -42437,6 +42437,29 @@ function schedulePreview() {
 }
 ytext.observe(schedulePreview);
 schedulePreview();
+var snapshotTimer = null;
+var lastSnapshotSent = null;
+function sendTextSnapshot() {
+  const ws = provider.ws;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const text2 = ytext.toString();
+  if (text2 === lastSnapshotSent) return;
+  try {
+    ws.send(JSON.stringify({ type: "text-snapshot", text: text2 }));
+    lastSnapshotSent = text2;
+  } catch {
+  }
+}
+function scheduleSnapshot() {
+  clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(sendTextSnapshot, 600);
+}
+ytext.observe(scheduleSnapshot);
+provider.on("status", (event) => {
+  if (event.status === "connected") {
+    setTimeout(sendTextSnapshot, 250);
+  }
+});
 var state = EditorState.create({
   doc: "",
   extensions: [
@@ -42481,6 +42504,82 @@ document.getElementById("settingsModal")?.addEventListener("show.bs.modal", asyn
     settingsError.classList.remove("d-none");
   }
 });
+var historyPanel = document.getElementById("historyPanel");
+var historyList = document.getElementById("historyList");
+var historyEmpty = document.getElementById("historyEmpty");
+var historyView = document.getElementById("historyView");
+var historyViewing = document.getElementById("historyViewing");
+var historyRefresh = document.getElementById("historyRefresh");
+function fmtTime(unix) {
+  try {
+    return new Date(unix * 1e3).toLocaleString();
+  } catch {
+    return String(unix);
+  }
+}
+async function loadHistoryList() {
+  historyList.innerHTML = "";
+  historyEmpty.textContent = "Loading...";
+  historyList.appendChild(historyEmpty);
+  try {
+    const res = await fetch(`/d/${docId}/versions.json`);
+    if (!res.ok) throw new Error("failed");
+    const data2 = await res.json();
+    const versions = data2.versions || [];
+    historyList.innerHTML = "";
+    if (versions.length === 0) {
+      const empty2 = document.createElement("div");
+      empty2.className = "text-muted small p-3";
+      empty2.textContent = "No snapshots yet. One will be saved when a collaborator disconnects.";
+      historyList.appendChild(empty2);
+      return;
+    }
+    for (const v of versions) {
+      const a = document.createElement("button");
+      a.type = "button";
+      a.className = "list-group-item list-group-item-action d-flex justify-content-between align-items-start";
+      const left = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "fw-semibold small";
+      title.textContent = fmtTime(v.created_at);
+      const sub = document.createElement("div");
+      sub.className = "text-muted small";
+      sub.textContent = `${v.char_count} chars \xB7 ${v.byte_size} B`;
+      left.appendChild(title);
+      left.appendChild(sub);
+      a.appendChild(left);
+      a.addEventListener("click", () => loadHistoryVersion(v.id, v.created_at));
+      historyList.appendChild(a);
+    }
+  } catch {
+    historyList.innerHTML = "";
+    const err = document.createElement("div");
+    err.className = "text-danger small p-3";
+    err.textContent = "Could not load history.";
+    historyList.appendChild(err);
+  }
+}
+async function loadHistoryVersion(id3, createdAt) {
+  historyView.textContent = "Loading...";
+  historyViewing.textContent = `Snapshot from ${fmtTime(createdAt)}`;
+  try {
+    const res = await fetch(`/d/${docId}/versions/${id3}.json`);
+    if (!res.ok) throw new Error("failed");
+    const data2 = await res.json();
+    historyView.textContent = data2.text || "";
+    Array.from(historyList.children).forEach((el) => el.classList.remove("active"));
+    const items = historyList.querySelectorAll("button");
+    items.forEach((el) => {
+      if (el.textContent && el.textContent.includes(fmtTime(createdAt))) {
+        el.classList.add("active");
+      }
+    });
+  } catch {
+    historyView.textContent = "Could not load snapshot.";
+  }
+}
+historyPanel?.addEventListener("show.bs.offcanvas", loadHistoryList);
+historyRefresh?.addEventListener("click", loadHistoryList);
 saveSettings?.addEventListener("click", async () => {
   settingsError.classList.add("d-none");
   const body = {

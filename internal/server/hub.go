@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -26,13 +27,36 @@ type Hub struct {
 
 	persistEvery time.Duration
 
+	// latestText is the most recent flattened text snapshot pushed by any client.
+	// hasText becomes true after the first text-snapshot is received.
+	latestText string
+	hasText    bool
+	// lastSavedText is the text of the most recently persisted document_versions row;
+	// loaded lazily on first save to avoid spamming duplicate snapshots across reconnects.
+	lastSavedText    string
+	lastSavedLoaded  bool
+
 	// onEmpty is called (once, under hub goroutine) when the last client leaves.
 	onEmpty func()
 }
 
+// frameKind distinguishes Yjs binary protocol frames from auxiliary text-snapshot frames.
+type frameKind int
+
+const (
+	frameBinary frameKind = iota
+	frameText
+)
+
 type clientFrame struct {
 	c    *wsClient
+	kind frameKind
 	data []byte
+}
+
+type textSnapshotMsg struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type wsClient struct {
@@ -65,6 +89,7 @@ func (h *Hub) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			_ = h.flush(context.Background())
+			_ = h.snapshotVersion(context.Background())
 			h.closeAllClients()
 			return
 
@@ -75,6 +100,7 @@ func (h *Hub) run(ctx context.Context) {
 			if _, ok := h.clients[c]; ok {
 				delete(h.clients, c)
 				close(c.send)
+				_ = h.snapshotVersion(context.Background())
 				if len(h.clients) == 0 {
 					_ = h.flush(context.Background())
 					if h.onEmpty != nil {
@@ -104,6 +130,19 @@ func (h *Hub) closeAllClients() {
 }
 
 func (h *Hub) handleFrame(frame clientFrame) {
+	if frame.kind == frameText {
+		var snap textSnapshotMsg
+		if err := json.Unmarshal(frame.data, &snap); err != nil {
+			h.log.Debug("text frame parse", "doc", h.docID, "err", err)
+			return
+		}
+		if snap.Type == "text-snapshot" {
+			h.latestText = snap.Text
+			h.hasText = true
+		}
+		return
+	}
+
 	msg := frame.data
 	top, syncStep, inner, err := parseYjsWire(msg)
 	if err != nil {
@@ -178,6 +217,34 @@ func (h *Hub) Flush(ctx context.Context) error {
 	return h.flush(ctx)
 }
 
+// snapshotVersion writes the current flattened text as a new document_versions row,
+// skipping the write if the text is identical to the most recently saved version.
+// No-op if no text snapshot has been received yet.
+func (h *Hub) snapshotVersion(ctx context.Context) error {
+	if !h.hasText {
+		return nil
+	}
+	if !h.lastSavedLoaded {
+		prev, err := h.store.LatestDocumentVersionText(ctx, h.docID)
+		if err != nil {
+			h.log.Warn("load latest version", "doc", h.docID, "err", err)
+		} else {
+			h.lastSavedText = prev
+			h.lastSavedLoaded = true
+		}
+	}
+	if h.lastSavedLoaded && h.latestText == h.lastSavedText {
+		return nil
+	}
+	if _, err := h.store.CreateDocumentVersion(ctx, h.docID, h.latestText); err != nil {
+		h.log.Warn("create document version", "doc", h.docID, "err", err)
+		return err
+	}
+	h.lastSavedText = h.latestText
+	h.lastSavedLoaded = true
+	return nil
+}
+
 func (c *wsClient) readPump() {
 	defer func() {
 		c.hub.unregister <- c
@@ -195,11 +262,13 @@ func (c *wsClient) readPump() {
 		if err != nil {
 			return
 		}
-		if mt != websocket.BinaryMessage {
-			continue
-		}
 		payload := append([]byte(nil), message...)
-		c.hub.incoming <- clientFrame{c: c, data: payload}
+		switch mt {
+		case websocket.BinaryMessage:
+			c.hub.incoming <- clientFrame{c: c, kind: frameBinary, data: payload}
+		case websocket.TextMessage:
+			c.hub.incoming <- clientFrame{c: c, kind: frameText, data: payload}
+		}
 	}
 }
 
