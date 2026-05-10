@@ -71,14 +71,12 @@
   <div class="offcanvas offcanvas-end" tabindex="-1" id="historyPanel" aria-labelledby="historyPanelLabel" style="width: 420px;">
     <div class="offcanvas-header border-bottom">
       <h5 class="offcanvas-title" id="historyPanelLabel">Document history</h5>
-      <div class="d-flex align-items-center gap-2">
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="historyRefresh" title="Refresh" aria-label="Refresh">🔄</button>
-        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-      </div>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
     <div class="offcanvas-body p-0 d-flex flex-column">
-      <div class="px-3 py-2 border-bottom small text-muted">
-        A snapshot is saved each time a collaborator disconnects.
+      <div class="px-3 py-2 border-bottom small text-muted d-flex align-items-center gap-2">
+        <p class="mb-0 flex-grow-1">A snapshot is saved each time a collaborator disconnects.</p>
+        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" id="historyRefresh" title="Refresh history" aria-label="Refresh history">🔄</button>
       </div>
       <div id="historyList" class="list-group list-group-flush overflow-auto" style="max-height: 35vh;">
         <div class="text-muted small p-3" id="historyEmpty">Loading...</div>

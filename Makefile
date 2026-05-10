@@ -11,7 +11,7 @@ all: build
 
 build: $(BINARY)
 
-$(BINARY): $(JS_OUT) $(GO_SOURCES)
+$(BINARY): $(JS_OUT) $(GO_SOURCES) $(WEB_SOURCES)
 	go build -o $(BINARY) $(GO_PKG)
 
 $(JS_OUT): $(JS_SRC) node_modules package.json
